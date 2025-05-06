@@ -1,0 +1,7 @@
+streamlit==1.32.0
+pandas==2.2.1
+numpy==1.26.4
+tushare==1.2.89
+plotly==5.19.0
+ta-lib==0.4.28
+python-dotenv==1.0.1 
