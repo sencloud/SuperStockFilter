@@ -39,11 +39,11 @@ class RisingSunFilter(BaseKlineFilter):
                             kline_data['close'].iloc[i] > kline_data['open'].iloc[i-1]):
                             
                             # 检查成交量
-                            if kline_data['vol'].iloc[i] > kline_data['vol'].iloc[i-1] * 1.5:
+                            if kline_data['volume'].iloc[i] > kline_data['volume'].iloc[i-1] * 1.5:
                                 result_stocks.append(stock)
                                 logger.info("股票 %s 形成旭日东升形态，成交量放大：%.2f%%", 
                                           stock['ts_code'],
-                                          (kline_data['vol'].iloc[i] / kline_data['vol'].iloc[i-1] - 1) * 100)
+                                          (kline_data['volume'].iloc[i] / kline_data['volume'].iloc[i-1] - 1) * 100)
                                 break
                 
             except Exception as e:

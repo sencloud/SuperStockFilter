@@ -23,33 +23,42 @@ class ThreeWhiteSoldiersFilter(BaseKlineFilter):
                     
                 # 计算K线实体和影线
                 kline_data['body'] = kline_data['close'] - kline_data['open']
+                kline_data['body_size'] = abs(kline_data['body'])
                 kline_data['upper_shadow'] = kline_data['high'] - kline_data[['open', 'close']].max(axis=1)
                 kline_data['lower_shadow'] = kline_data[['open', 'close']].min(axis=1) - kline_data['low']
                 
                 # 寻找红三兵形态
                 for i in range(2, len(kline_data)):
-                    # 检查连续三根阳线
-                    if (kline_data['body'].iloc[i] > 0 and
-                        kline_data['body'].iloc[i-1] > 0 and
-                        kline_data['body'].iloc[i-2] > 0):
+                    # 检查连续三根阳线（收盘价必须高于开盘价）
+                    if not all(kline_data['close'].iloc[i-2:i+1] > kline_data['open'].iloc[i-2:i+1]):
+                        continue
+                    
+                    # 检查每根阳线的实体大小（过滤掉十字星等微小实体）
+                    avg_body = kline_data['body_size'].iloc[i-2:i+1].mean()
+                    if not all(kline_data['body_size'].iloc[i-2:i+1] > avg_body * 0.5):
+                        continue
                         
-                        # 检查每根阳线的开盘价是否在前一根阳线的实体范围内
-                        if (kline_data['open'].iloc[i] > kline_data['open'].iloc[i-1] and
-                            kline_data['open'].iloc[i-1] > kline_data['open'].iloc[i-2]):
-                            
-                            # 检查每根阳线的收盘价是否高于前一根阳线的收盘价
-                            if (kline_data['close'].iloc[i] > kline_data['close'].iloc[i-1] and
-                                kline_data['close'].iloc[i-1] > kline_data['close'].iloc[i-2]):
-                                
-                                # 检查成交量是否递增
-                                if (kline_data['vol'].iloc[i] > kline_data['vol'].iloc[i-1] and
-                                    kline_data['vol'].iloc[i-1] > kline_data['vol'].iloc[i-2]):
-                                    
-                                    result_stocks.append(stock)
-                                    logger.info("股票 %s 形成红三兵形态，成交量递增：%.2f%%", 
-                                              stock['ts_code'],
-                                              (kline_data['vol'].iloc[i] / kline_data['vol'].iloc[i-2] - 1) * 100)
-                                    break
+                    # 检查每根阳线的开盘价是否高于前一根阳线的开盘价
+                    if not (kline_data['open'].iloc[i] > kline_data['open'].iloc[i-1] > kline_data['open'].iloc[i-2]):
+                        continue
+                        
+                    # 检查每根阳线的收盘价是否高于前一根阳线的收盘价
+                    if not (kline_data['close'].iloc[i] > kline_data['close'].iloc[i-1] > kline_data['close'].iloc[i-2]):
+                        continue
+                        
+                    # 检查上影线不能过长（不超过实体的50%）
+                    if not all(kline_data['upper_shadow'].iloc[i-2:i+1] < kline_data['body_size'].iloc[i-2:i+1] * 0.5):
+                        continue
+                        
+                    # 检查成交量是否递增
+                    if (kline_data['volume'].iloc[i] > kline_data['volume'].iloc[i-1] and
+                        kline_data['volume'].iloc[i-1] > kline_data['volume'].iloc[i-2]):
+                        
+                        result_stocks.append(stock)
+                        logger.info("股票 %s 形成红三兵形态，成交量递增：%.2f%%", 
+                                  stock['ts_code'],
+                                  (kline_data['volume'].iloc[i] / kline_data['volume'].iloc[i-2] - 1) * 100)
+                        break
                 
             except Exception as e:
                 logger.error("处理股票 %s 时出错: %s", stock['ts_code'], str(e))

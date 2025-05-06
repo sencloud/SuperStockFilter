@@ -36,8 +36,8 @@ class FlatBottomFilter(BaseKlineFilter):
                     # 检查价格是否在窄幅区间内波动
                     if price_std / price_mean < 0.02:  # 价格波动小于2%
                         # 检查成交量是否放大
-                        volume_ma = recent_data['vol'].mean()
-                        recent_volume = recent_data['vol'].iloc[-3:].mean()
+                        volume_ma = recent_data['volume'].mean()
+                        recent_volume = recent_data['volume'].iloc[-3:].mean()
                         
                         if recent_volume > volume_ma * 1.5:  # 成交量放大50%
                             result_stocks.append(stock)
