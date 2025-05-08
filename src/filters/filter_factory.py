@@ -11,6 +11,7 @@ from .kline_patterns.bullish_engulfing_filter import BullishEngulfingFilter
 from .kline_patterns.three_white_soldiers_filter import ThreeWhiteSoldiersFilter
 from .kline_patterns.hammer_filter import HammerFilter
 from .price_patterns.limit_up_filter import LimitUpFilter
+from .price_patterns.money_flow_filter import MoneyFlowFilter
 
 class FilterFactory:
     """筛选器工厂类"""
@@ -27,7 +28,8 @@ class FilterFactory:
         '看涨吞没': BullishEngulfingFilter,
         '红三兵': ThreeWhiteSoldiersFilter,
         '锤头线': HammerFilter,
-        '涨停': LimitUpFilter
+        '涨停': LimitUpFilter,
+        '资金持续流入': MoneyFlowFilter
     }
     
     @classmethod

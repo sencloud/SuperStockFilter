@@ -29,7 +29,7 @@ def render_advanced_filter():
     # 价格预测
     price_prediction = st.radio(
         "价格预测",
-        options=['所有', '涨停'],
+        options=['所有', '涨停', '资金持续流入'],
         index=0,
         help="选择价格预测类型"
     )
