@@ -1,24 +1,13 @@
 import streamlit as st
 import tushare as ts
-import os
-from dotenv import load_dotenv
+from src.api.config import get_settings
 import logging
 
-# 加载环境变量
-load_dotenv()
-
-# DeepSeek API配置
-DEEPSEEK_API_KEY = os.getenv("DEEPSEEK_API_KEY")
-DEEPSEEK_API_BASE = "https://ark.cn-beijing.volces.com/api/v3/bots"
-
-# 获取Tushare API token
-TUSHARE_TOKEN = os.getenv('TUSHARE_TOKEN')
-
-if not TUSHARE_TOKEN:
-    raise ValueError("请在.env文件中设置TUSHARE_TOKEN环境变量")
+# 获取配置
+settings = get_settings()
 
 # 初始化Tushare API
-ts_api = ts.pro_api(TUSHARE_TOKEN)
+ts_api = ts.pro_api(settings.TUSHARE_TOKEN)
 
 # 设置日志级别
 logging.basicConfig(level=logging.INFO)

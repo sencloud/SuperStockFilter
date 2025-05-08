@@ -54,51 +54,179 @@ def filter_stocks(
     industries: List[str] = None,
     index_components: List[str] = None,
     kline_pattern: str = None,
-    price_prediction: str = None
-) -> Optional[pd.DataFrame]:
+    price_prediction: str = None,
+    page: int = 1,
+    page_size: int = 20
+) -> Dict[str, any]:
     """筛选股票"""
     try:
+        logger.info(f"开始筛选股票，参数：market_types={market_types}, industries={industries}, "
+                   f"index_components={index_components}, kline_pattern={kline_pattern}, "
+                   f"price_prediction={price_prediction}, page={page}, page_size={page_size}")
+        
         # 获取股票列表
         df = ts_api.stock_basic(exchange='', list_status='L')
+        logger.info(f"获取到原始股票列表: type={type(df)}, shape={df.shape if isinstance(df, pd.DataFrame) else 'not DataFrame'}")
+        
+        if not isinstance(df, pd.DataFrame):
+            logger.error(f"获取股票列表返回类型错误: {type(df)}")
+            logger.error(f"返回内容: {df}")
+            return {
+                'data': [],
+                'total': 0,
+                'page': page,
+                'page_size': page_size
+            }
+        
+        if df.empty:
+            logger.warning("获取到的股票列表为空")
+            return {
+                'data': [],
+                'total': 0,
+                'page': page,
+                'page_size': page_size
+            }
         
         # 市场类型筛选
         if market_types:
+            logger.info(f"进行市场类型筛选，条件: {market_types}")
             df = df[df['market'].isin(market_types)]
+            logger.info(f"市场类型筛选后剩余股票数: {len(df)}")
             
         # 行业筛选
         if industries:
+            logger.info(f"进行行业筛选，条件: {industries}")
             df = df[df['industry'].isin(industries)]
+            logger.info(f"行业筛选后剩余股票数: {len(df)}")
             
         # 指数成分股筛选
         if index_components:
+            logger.info(f"进行指数成分股筛选，条件: {index_components}")
             index_stocks = set()
             for index_code in index_components:
                 try:
+                    logger.info(f"获取指数 {index_code} 的成分股")
                     index_df = ts_api.index_weight(index_code=index_code)
-                    if index_df is not None and not index_df.empty:
-                        index_stocks.update(index_df['con_code'].tolist())
+                    logger.info(f"指数 {index_code} 返回数据类型: {type(index_df)}")
+                    if isinstance(index_df, pd.DataFrame) and not index_df.empty:
+                        current_stocks = index_df['con_code'].tolist()
+                        logger.info(f"指数 {index_code} 包含成分股数量: {len(current_stocks)}")
+                        index_stocks.update(current_stocks)
                 except Exception as e:
-                    logger.error(f"获取指数 {index_code} 成分股失败: {str(e)}")
+                    logger.error(f"获取指数 {index_code} 成分股失败: {str(e)}", exc_info=True)
             if index_stocks:
+                logger.info(f"总成分股数量: {len(index_stocks)}")
                 df = df[df['ts_code'].isin(index_stocks)]
+                logger.info(f"指数成分股筛选后剩余股票数: {len(df)}")
                 
         # K线形态筛选
         if kline_pattern and kline_pattern != '所有':
+            logger.info(f"进行K线形态筛选，条件: {kline_pattern}")
             filter_instance = FilterFactory.create_filter(kline_pattern)
             if filter_instance:
                 df = filter_instance.filter(df)
+                logger.info(f"K线形态筛选后剩余股票数: {len(df)}")
                 
         # 价格预测筛选
         if price_prediction:
+            logger.info(f"进行价格预测筛选，条件: {price_prediction}")
             filter_instance = FilterFactory.create_filter(price_prediction)
             if filter_instance:
                 df = filter_instance.filter(df)
+                logger.info(f"价格预测筛选后剩余股票数: {len(df)}")
+        
+        # 计算总数
+        total = len(df)
+        logger.info(f"筛选后总股票数: {total}")
+        
+        # 分页
+        start_idx = (page - 1) * page_size
+        end_idx = start_idx + page_size
+        logger.info(f"进行分页，范围: {start_idx} - {end_idx}")
+        df_page = df.iloc[start_idx:end_idx].copy()
+        logger.info(f"当前页股票数: {len(df_page)}")
+        
+        # 获取最新行情数据
+        if not df_page.empty:
+            stock_codes = ','.join(df_page['ts_code'].tolist())
+            logger.info(f"获取行情数据，股票代码: {stock_codes}")
+            try:
+                # 获取日线数据
+                logger.info("开始获取日线数据")
+                daily = ts_api.daily(ts_code=stock_codes)
+                logger.info(f"日线数据类型: {type(daily)}, 是否为空: {daily.empty if isinstance(daily, pd.DataFrame) else 'not DataFrame'}")
                 
-        return df
+                if isinstance(daily, pd.DataFrame) and not daily.empty:
+                    daily = daily.sort_values('trade_date').groupby('ts_code').last()
+                    logger.info(f"处理后的日线数据列: {daily.columns.tolist()}")
+                    df_page = df_page.merge(daily[['close', 'pct_chg', 'vol', 'amount']], 
+                                    left_on='ts_code', right_index=True, how='left')
+                    df_page = df_page.rename(columns={
+                        'close': 'price',
+                        'vol': 'volume'
+                    })
+                    logger.info("日线数据合并完成")
+                
+                # 获取每日指标
+                logger.info("开始获取每日指标")
+                daily_basic = ts_api.daily_basic(ts_code=stock_codes)
+                logger.info(f"每日指标数据类型: {type(daily_basic)}, 是否为空: {daily_basic.empty if isinstance(daily_basic, pd.DataFrame) else 'not DataFrame'}")
+                
+                if isinstance(daily_basic, pd.DataFrame) and not daily_basic.empty:
+                    daily_basic = daily_basic.sort_values('trade_date').groupby('ts_code').last()
+                    logger.info(f"处理后的每日指标列: {daily_basic.columns.tolist()}")
+                    df_page = df_page.merge(daily_basic[['pe', 'pb', 'total_mv']], 
+                                    left_on='ts_code', right_index=True, how='left')
+                    logger.info("每日指标合并完成")
+            except Exception as e:
+                logger.error(f"获取行情数据失败: {str(e)}", exc_info=True)
+        
+        # 处理数据，确保JSON序列化不会出错
+        logger.info("开始处理数据进行JSON序列化")
+        result = []
+        for idx, row in df_page.iterrows():
+            try:
+                logger.debug(f"处理第 {idx} 行数据")
+                # 先转换为字典
+                row_dict = row.to_dict() if hasattr(row, 'to_dict') else dict(row)
+                logger.debug(f"行数据转换为字典: {row_dict}")
+                
+                stock_data = {
+                    'ts_code': str(row_dict.get('ts_code', '')),
+                    'name': str(row_dict.get('name', '')),
+                    'industry': str(row_dict.get('industry', '')),
+                    'market': str(row_dict.get('market', '')),
+                    'area': str(row_dict.get('area', '')),
+                    'list_date': str(row_dict.get('list_date', '')),
+                    'price': float(row_dict['price']) if pd.notna(row_dict.get('price')) else None,
+                    'change': float(row_dict['pct_chg']) if pd.notna(row_dict.get('pct_chg')) else None,
+                    'volume': float(row_dict['volume']) if pd.notna(row_dict.get('volume')) else None,
+                    'amount': float(row_dict['amount']) if pd.notna(row_dict.get('amount')) else None,
+                    'pe': float(row_dict['pe']) if pd.notna(row_dict.get('pe')) else None,
+                    'pb': float(row_dict['pb']) if pd.notna(row_dict.get('pb')) else None,
+                    'total_mv': float(row_dict['total_mv']) if pd.notna(row_dict.get('total_mv')) else None
+                }
+                result.append(stock_data)
+            except Exception as e:
+                logger.error(f"处理股票数据失败: {str(e)}, row: {row}", exc_info=True)
+                continue
+        
+        logger.info(f"数据处理完成，返回 {len(result)} 条记录")
+        return {
+            'data': result,
+            'total': total,
+            'page': page,
+            'page_size': page_size
+        }
         
     except Exception as e:
-        logger.error(f"筛选股票失败: {str(e)}")
-        return None
+        logger.error(f"筛选股票失败: {str(e)}", exc_info=True)
+        return {
+            'data': [],
+            'total': 0,
+            'page': page,
+            'page_size': page_size
+        }
 
 def get_stock_basic_info(stock_code: str) -> dict:
     """获取股票基础信息"""
@@ -108,23 +236,40 @@ def get_stock_basic_info(stock_code: str) -> dict:
         basic_info = ts_api.stock_basic(ts_code=stock_code, fields='ts_code,name,area,industry,market,list_date')
         
         # 获取实时行情
-        daily_info = ts_api.daily(ts_code=stock_code)
+        daily = ts_api.daily(ts_code=stock_code)
         
-        # 获取财务指标
-        financial_info = ts_api.fina_indicator(ts_code=stock_code)
+        # 获取每日指标
+        daily_basic = ts_api.daily_basic(ts_code=stock_code)
         
-        # 合并信息
-        info = {
-            '基本信息': basic_info.to_dict('records')[0] if not basic_info.empty else {},
-            '实时行情': daily_info.to_dict('records')[0] if not daily_info.empty else {},
-            '财务指标': financial_info.to_dict('records')[0] if not financial_info.empty else {}
-        }
+        if basic_info.empty:
+            raise ValueError(f"股票不存在: {stock_code}")
+            
+        # 转换DataFrame为字典
+        result = basic_info.iloc[0].to_dict() if isinstance(basic_info, pd.DataFrame) else basic_info
         
-        logger.info(f"获取到的股票信息:\n{info}")
-        return info
+        # 添加行情数据
+        if not daily.empty and isinstance(daily, pd.DataFrame):
+            daily_latest = daily.iloc[0].to_dict()
+            result.update({
+                'price': float(daily_latest.get('close')) if pd.notna(daily_latest.get('close')) else None,
+                'change': float(daily_latest.get('pct_chg')) if pd.notna(daily_latest.get('pct_chg')) else None,
+                'volume': float(daily_latest.get('vol')) if pd.notna(daily_latest.get('vol')) else None,
+                'amount': float(daily_latest.get('amount')) if pd.notna(daily_latest.get('amount')) else None
+            })
+            
+        # 添加指标数据
+        if not daily_basic.empty and isinstance(daily_basic, pd.DataFrame):
+            daily_basic_latest = daily_basic.iloc[0].to_dict()
+            result.update({
+                'pe': float(daily_basic_latest.get('pe')) if pd.notna(daily_basic_latest.get('pe')) else None,
+                'pb': float(daily_basic_latest.get('pb')) if pd.notna(daily_basic_latest.get('pb')) else None,
+                'total_mv': float(daily_basic_latest.get('total_mv')) if pd.notna(daily_basic_latest.get('total_mv')) else None
+            })
+            
+        return result
     except Exception as e:
         logger.error(f"获取股票{stock_code}基础信息时发生错误: {str(e)}", exc_info=True)
-        return {"error": str(e)}
+        raise
 
 async def get_deepseek_analysis(stock_code: str) -> dict:
     """获取DeepSeek分析结果
@@ -150,12 +295,22 @@ async def get_deepseek_analysis(stock_code: str) -> dict:
         请务必结合最近7天的资讯以及我手上的如下信息：
 
 基本面信息：
-- 公司名称：{basic_info.get('基本信息', {}).get('name', '未知')}
-- 所属行业：{basic_info.get('基本信息', {}).get('industry', '未知')}
-- 上市日期：{basic_info.get('基本信息', {}).get('list_date', '未知')}
+- 公司名称：{basic_info.get('name', '未知')}
+- 所属行业：{basic_info.get('industry', '未知')}
+- 上市日期：{basic_info.get('list_date', '未知')}
+- 所在地区：{basic_info.get('area', '未知')}
+- 市场类型：{basic_info.get('market', '未知')}
 
-最新财务指标：
-{str(basic_info.get('财务指标', {}))}
+最新交易数据：
+- 最新价：{basic_info.get('price', '未知')}元
+- 涨跌幅：{basic_info.get('change', '未知')}%
+- 成交量：{basic_info.get('volume', '未知')}手
+- 成交额：{basic_info.get('amount', '未知')}千元
+
+主要指标：
+- 市盈率：{basic_info.get('pe', '未知')}
+- 市净率：{basic_info.get('pb', '未知')}
+- 总市值：{basic_info.get('total_mv', '未知')}元
 
 最近交易数据：
 {daily_data.head().to_string() if not daily_data.empty else '无数据'}

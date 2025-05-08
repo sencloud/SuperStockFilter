@@ -1,6 +1,6 @@
 import httpx
 from typing import Dict, Any, List
-from src.utils.config import DEEPSEEK_API_KEY, DEEPSEEK_API_BASE
+from src.api.config import get_settings
 from openai import OpenAI
 import logging
 
@@ -17,8 +17,9 @@ class DeepSeekClient:
     def __init__(self):
         """初始化DeepSeek客户端"""
         logger.info("初始化DeepSeek客户端")
-        self.api_key = DEEPSEEK_API_KEY
-        self.base_url = DEEPSEEK_API_BASE
+        settings = get_settings()
+        self.api_key = settings.DEEPSEEK_API_KEY
+        self.base_url = settings.DEEPSEEK_API_BASE
         self.client = OpenAI(
             api_key=self.api_key,
             base_url=self.base_url
